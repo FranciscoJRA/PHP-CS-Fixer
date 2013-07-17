@@ -155,8 +155,8 @@ class ControlSpacesFixer implements FixerInterface
                 sprintf('/(%s)[^\S\n]*\((.*)\)[^\S\n]*{/', implode('|', $statements)),
             ),
             array(
-                '\\1 (\\2\\3) {',
-                '\\1 (\\2) {'
+                '\\1(\\2\\3) {',
+                '\\1(\\2) {'
             ),
             $content
         );
