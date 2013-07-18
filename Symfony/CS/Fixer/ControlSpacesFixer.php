@@ -175,7 +175,7 @@ class ControlSpacesFixer implements FixerInterface
             'else',
         );
 
-        return preg_replace(sprintf('/}[^\S\n]*(%s)[^\S\n]*{/', implode('|', $statements)), '} \\1 {', $content);
+        return preg_replace(sprintf('/}[^\S\n]*(%s)[^\S\n]*{/', implode('|', $statements)), '}\n\\1 {', $content);
     }
 
     /**
@@ -193,7 +193,7 @@ class ControlSpacesFixer implements FixerInterface
             'catch',
         );
 
-        return preg_replace(sprintf('/}[^\S\n]*(%s)[^\S\n]*\((.*)\)[^\S\n]*{/', implode('|', $statements)), '} \\1 (\\2) {', $content);
+        return preg_replace(sprintf('/}[^\S\n]*(%s)[^\S\n]*\((.*)\)[^\S\n]*{/', implode('|', $statements)), '}\n\\1 (\\2) {', $content);
     }
 
     /**
