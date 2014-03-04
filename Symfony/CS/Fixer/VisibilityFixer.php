@@ -28,8 +28,8 @@ class VisibilityFixer implements FixerInterface
         // Visibility MUST be declared on all properties and methods;
         // abstract and final MUST be declared before the visibility;
         // static MUST be declared after the visibility
-        $content = preg_replace_callback('/^( {2,4}|\t)((?:(?:public|protected|private|static|var) +)+) *(\$[a-z0-9_]+)/im', function ($matches) {
-            $flags = explode(' ', strtolower(trim($matches[2])));
+        $content = preg_replace_callback('/^( {2,4}|\t)((?:static\s+)?)((?:(?:public|protected|private|var)\s+)+)((?:static\s+)?)\s*(\$[a-z0-9_]+)/im', function ($matches) {
+            $flags = explode(' ', strtolower(trim($matches[3])));
             if (in_array('protected', $flags)) {
                 $visibility = 'protected';
             } elseif (in_array('private', $flags)) {
@@ -39,11 +39,13 @@ class VisibilityFixer implements FixerInterface
             }
 
             return $matches[1] . $visibility
-                . (in_array('static', $flags) ? ' static' : '')
-                . ' ' . $matches[3];
+                . (strlen(trim($matches[2])) > 0 || strlen(trim($matches[4])) > 0 ? ' static' : '')
+                . ' ' . $matches[5];
         }, $content);
 
-        $content = preg_replace_callback('/^( {2,4}|\t)((?:(?:public|protected|private|static|abstract|final) +)*)(function +[a-z0-9_]+)/im', function ($matches) {
+        $content = preg_replace_callback('/^( {2,4}|\t)((?:(?:public|protected|private|static|abstract|final)\s+)*)(?:function\s+([a-z0-9_]+))/im', function ($matches) {
+            //if there's more than 1 space between keywords or line breaks, trim it down to just one
+            $matches[2] = preg_replace('/\\s/', ' ', $matches[2]);
             $flags = explode(' ', strtolower(trim($matches[2])));
             if (in_array('protected', $flags)) {
                 $visibility = 'protected';
@@ -58,7 +60,7 @@ class VisibilityFixer implements FixerInterface
                 . (in_array('final', $flags) ? 'final ' : '')
                 . $visibility
                 . (in_array('static', $flags) ? ' static' : '')
-                . ' '. $matches[3];
+                . ' function '. $matches[3];
         }, $content);
 
         return $content;

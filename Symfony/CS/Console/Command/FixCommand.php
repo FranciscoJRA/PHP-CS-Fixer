@@ -21,6 +21,7 @@ use Symfony\CS\Fixer;
 use Symfony\CS\FixerInterface;
 use Symfony\CS\Config\Config;
 use Symfony\CS\ConfigInterface;
+use Symfony\CS\StdinFileInfo;
 
 /**
  * @author Fabien Potencier <fabien@symfony.com>
@@ -57,7 +58,8 @@ class FixCommand extends Command
                 new InputOption('dry-run', '', InputOption::VALUE_NONE, 'Only shows which files would have been modified'),
                 new InputOption('level', '', InputOption::VALUE_REQUIRED, 'The level of fixes (can be psr0, psr1, psr2, or all)', null),
                 new InputOption('fixers', '', InputOption::VALUE_REQUIRED, 'A list of fixers to run'),
-                new InputOption('diff', '', InputOption::VALUE_NONE, 'Also produce diff for each file')
+                new InputOption('diff', '', InputOption::VALUE_NONE, 'Also produce diff for each file'),
+                new InputOption('format', '', InputOption::VALUE_REQUIRED, 'To output results in other formats', 'txt')
             ))
             ->setDescription('Fixes a directory or a file')
             ->setHelp(<<<EOF
@@ -90,6 +92,11 @@ using <comment>-name</comment>:
 A combination of <comment>--dry-run</comment>, <comment>--verbose</comment> and <comment>--diff</comment> will
 display summary of proposed fixes, leaving your files unchanged.
 
+The command can also read from standard input, in which case it won't
+automatically fix anything:
+
+    <info>cat foo.php | php %command.full_name% -v --diff -</info>
+
 Choose from the list of available fixers:
 
 {$this->getFixersHelp()}
@@ -97,8 +104,8 @@ Choose from the list of available fixers:
 The <comment>--config</comment> option customizes the files to analyse, based
 on some well-known directory structures:
 
-    <comment># For the Symfony 2.1 branch</comment>
-    <info>php %command.full_name% /path/to/sf21 --config=sf21</info>
+    <comment># For the Symfony 2.3+ branch</comment>
+    <info>php %command.full_name% /path/to/sf23 --config=sf23</info>
 
 Choose from the list of available configurations:
 
@@ -125,6 +132,22 @@ and directories that need to be analyzed:
         ->fixers(array('indentation', 'elseif'))
         ->finder(\$finder)
     ;
+
+You may also use a blacklist for the Fixers instead of the above shown whitelist approach.
+The following example shows how to use all Fixers but the `Psr0Fixer`.
+Note the additional <comment>-</comment> in front of the Fixer name.
+
+    <?php
+
+    \$finder = Symfony\CS\Finder\DefaultFinder::create()
+        ->exclude('somefile')
+        ->in(__DIR__)
+    ;
+
+    return Symfony\CS\Config\Config::create()
+        ->fixers(array('-Psr0Fixer'))
+        ->finder(\$finder)
+    ;
 EOF
             );
     }
@@ -135,10 +158,22 @@ EOF
     protected function execute(InputInterface $input, OutputInterface $output)
     {
         $path = $input->getArgument('path');
+
+        $stdin = false;
+
+        if ('-' === $path) {
+            $stdin = true;
+
+            // Can't write to STDIN
+            $input->setOption('dry-run', true);
+        }
+
         $filesystem = new Filesystem();
         if (!$filesystem->isAbsolutePath($path)) {
             $path = getcwd().DIRECTORY_SEPARATOR.$path;
         }
+
+        $addSuppliedPathFromCli = true;
 
         if ($input->getOption('config')) {
             $config = null;
@@ -154,14 +189,19 @@ EOF
             }
         } elseif (file_exists($file = $path.'/.php_cs')) {
             $config = include $file;
+            $addSuppliedPathFromCli = false;
         } else {
             $config = $this->defaultConfig;
         }
 
-        if (is_file($path)) {
-            $config->finder(new \ArrayIterator(array(new \SplFileInfo($path))));
-        } else {
-            $config->setDir($path);
+        if ($addSuppliedPathFromCli) {
+            if (is_file($path)) {
+                $config->finder(new \ArrayIterator(array(new \SplFileInfo($path))));
+            } elseif ($stdin) {
+                $config->finder(new \ArrayIterator(array(new StdinFileInfo())));
+            } else {
+                $config->setDir($path);
+            }
         }
 
         // register custom fixers from config
@@ -183,7 +223,12 @@ EOF
                 $level = FixerInterface::ALL_LEVEL;
                 break;
             case null:
-                $level = $input->getOption('fixers') ? null : $config->getFixers();
+                $fixerOption = $input->getOption('fixers');
+                if (empty($fixerOption) || preg_match('{(^|,)-}', $fixerOption)) {
+                    $level = $config->getFixers();
+                } else {
+                    $level = null;
+                }
                 break;
             default:
                 throw new \InvalidArgumentException(sprintf('The level "%s" is not defined.', $input->getOption('level')));
@@ -227,18 +272,50 @@ EOF
         $changed = $this->fixer->fix($config, $input->getOption('dry-run'), $input->getOption('diff'));
 
         $i = 1;
-        foreach ($changed as $file => $fixResult) {
-            $output->write(sprintf('%4d) %s', $i++, $file));
-            if ($input->getOption('verbose')) {
-                $output->write(sprintf(' (<comment>%s</comment>)', implode(', ', $fixResult['appliedFixers'])));
-                if ($input->getOption('diff')) {
+        switch ($input->getOption('format')) {
+            case 'txt':
+                foreach ($changed as $file => $fixResult) {
+                    $output->write(sprintf('%4d) %s', $i++, $file));
+                    if ($input->getOption('verbose')) {
+                        $output->write(sprintf(' (<comment>%s</comment>)', implode(', ', $fixResult['appliedFixers'])));
+                        if ($input->getOption('diff')) {
+                            $output->writeln('');
+                            $output->writeln('<comment>      ---------- begin diff ----------</comment>');
+                            $output->writeln($fixResult['diff']);
+                            $output->writeln('<comment>      ---------- end diff ----------</comment>');
+                        }
+                    }
                     $output->writeln('');
-                    $output->writeln('<comment>      ---------- begin diff ----------</comment>');
-                    $output->writeln($fixResult['diff']);
-                    $output->writeln('<comment>      ---------- end diff ----------</comment>');
                 }
-            }
-            $output->writeln('');
+                break;
+            case 'xml':
+                $dom = new \DOMDocument('1.0', 'UTF-8');
+                $dom->appendChild($filesXML = $dom->createElement('files'));
+                foreach ($changed as $file => $fixResult) {
+                    $filesXML->appendChild($fileXML = $dom->createElement('file'));
+
+                    $fileXML->setAttribute('id', $i++);
+                    $fileXML->setAttribute('name', $file);
+                    if ($input->getOption('verbose')) {
+                        $fileXML->appendChild($appliedFixersXML = $dom->createElement('applied_fixers'));
+                        foreach ($fixResult['appliedFixers'] as $appliedFixer) {
+                            $appliedFixersXML->appendChild($appliedFixerXML = $dom->createElement('applied_fixer'));
+                            $appliedFixerXML->setAttribute('name', $appliedFixer);
+                        }
+
+                        if ($input->getOption('diff')) {
+                            $fileXML->appendChild($diffXML = $dom->createElement('diff'));
+
+                            $diffXML->appendChild($dom->createCDATASection($fixResult['diff']));
+                        }
+                    }
+                }
+
+                $dom->formatOutput = true;
+                $output->write($dom->saveXML());
+                break;
+            default:
+                throw new \InvalidArgumentException(sprintf('The format "%s" is not defined.', $input->getOption('format')));
         }
 
         return empty($changed) ? 0 : 1;

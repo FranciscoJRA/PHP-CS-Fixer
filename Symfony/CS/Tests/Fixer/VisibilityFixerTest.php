@@ -31,6 +31,7 @@ class Foo {
     public static $var;
     protected static $var_foo;
     private static $FooBar;
+    private static $FooBar;
     public $old = 'foo';
 }
 EOF;
@@ -46,6 +47,8 @@ class Foo {
     public static $var;
     protected static $var_foo;
     private static $FooBar;
+    private static
+    $FooBar;
     var $old = 'foo';
 }
 EOF;
@@ -63,37 +66,50 @@ class Foo {
     public function foo() {}
     public function foo() {}
     protected function foo() {}
+    abstract protected function foo() {};
     private function foo() {}
     final public function foo() {}
     abstract public function foo();
     final public function foo() {}
     abstract public function foo();
+    public static function foo() {}
+    public static function foo() {}
+    public static function foo() {}
     public static function foo() {}
     final public static function foo() {}
     abstract public static function foo();
         function ($foo) {}
         function() {
             static $foo;
+    static $foo;
         }
 }
 EOF;
 
-        $input = <<<'EOF'
+        $input = <<<EOF
 class Foo {
     public function foo() {}
     function foo() {}
     protected function foo() {}
+    protected
+    abstract function foo() {};
     private function foo() {}
     final public function foo() {}
     abstract public function foo();
     public final function foo() {}
     public abstract function foo();
     public static function foo() {}
+    public static function\tfoo() {}
+    public static function
+    foo() {}
+    public static
+    function foo() {}
     final static function foo() {}
     static abstract function foo();
-        function ($foo) {}
+        function (\$foo) {}
         function() {
-            static $foo;
+            static \$foo;
+    static \$foo;
         }
 }
 EOF;
